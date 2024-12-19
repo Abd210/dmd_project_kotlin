@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <SwitchPreferenceCompat
+        android:key="enable_notifications"
+        android:title="Enable Notifications"
+        android:summary="Toggle to enable or disable task notifications"
+        android:defaultValue="true" />
+
+    <ListPreference
+        android:key="reminder_interval"
+        android:title="Reminder Interval"
+        android:summary="Select how far before a task's deadline you want to be reminded"
+        android:entries="@array/reminder_intervals"
+        android:entryValues="@array/reminder_intervals_values"
+        android:defaultValue="10_minutes_before" />
+
+</PreferenceScreen>

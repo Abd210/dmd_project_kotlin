@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/add_task_coordinator_layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Toolbar -->
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="?attr/colorPrimary"
+        android:title="Add Task"
+        android:titleTextColor="@android:color/white"
+        app:popupTheme="@style/ThemeOverlay.AppCompat.Light" />
+
+    <!-- Content -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="?attr/actionBarSize"
+        android:padding="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- Task Title -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/tlTaskTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Task Title"
+                android:layout_marginBottom="16dp">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etTaskTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- Task Description -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/tlTaskDescription"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Task Description"
+                android:layout_marginBottom="16dp">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etTaskDescription"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textMultiLine"
+                    android:minLines="3" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- Select Date Button -->
+            <Button
+                android:id="@+id/btnSelectDate"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Select Deadline Date" />
+
+            <!-- Selected Date TextView -->
+            <TextView
+                android:id="@+id/tvSelectedDate"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Selected Date: Not set"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="16dp" />
+
+            <!-- Select Time Button -->
+            <Button
+                android:id="@+id/btnSelectTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Select Deadline Time" />
+
+            <!-- Selected Time TextView -->
+            <TextView
+                android:id="@+id/tvSelectedTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Selected Time: Not set"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="16dp" />
+
+            <!-- Save Task Button -->
+            <Button
+                android:id="@+id/btnSaveTask"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Save Task" />
+
+        </LinearLayout>
+    </ScrollView>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

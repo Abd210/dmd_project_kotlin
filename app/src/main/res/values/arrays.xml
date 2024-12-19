@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="reminder_intervals">
+        <item>5 minutes before</item>
+        <item>10 minutes before</item>
+        <item>30 minutes before</item>
+        <item>1 hour before</item>
+    </string-array>
+
+    <string-array name="reminder_intervals_values">
+        <item>5_minutes_before</item>
+        <item>10_minutes_before</item>
+        <item>30_minutes_before</item>
+        <item>1_hour_before</item>
+    </string-array>
+</resources>
