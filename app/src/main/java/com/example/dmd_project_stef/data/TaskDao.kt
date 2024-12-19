@@ -1,3 +1,4 @@
+//taskDao.kt
 package com.example.dmd_project_stef.data
 
 import androidx.lifecycle.LiveData
@@ -19,4 +20,8 @@ interface TaskDao {
 
     @Delete
     suspend fun delete(task: Task)
+
+    // New method to fetch all tasks synchronously
+    @Query("SELECT * FROM tasks ORDER BY deadline ASC")
+    fun getAllTasksSync(): List<Task>
 }

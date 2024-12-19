@@ -1,3 +1,4 @@
+//SettingsActivity.kt
 package com.example.dmd_project_stef
 
 import android.os.Bundle

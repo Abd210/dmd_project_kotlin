@@ -1,6 +1,8 @@
+//TaskViewModel.kt
 package com.example.dmd_project_stef.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.viewModelScope
@@ -21,16 +23,20 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun insert(task: Task) = viewModelScope.launch {
+        Log.d("TaskViewModel", "Inserting task: ${task.title}")
         repository.insert(task)
     }
 
     fun update(task: Task) = viewModelScope.launch {
+        Log.d("TaskViewModel", "Updating task: ${task.title}")
         repository.update(task)
     }
 
     fun delete(task: Task) = viewModelScope.launch {
+        Log.d("TaskViewModel", "Deleting task: ${task.title}")
         repository.delete(task)
     }
+
 
     fun getTaskById(taskId: Int): LiveData<Task?> {
         val taskLiveData = androidx.lifecycle.MutableLiveData<Task?>()

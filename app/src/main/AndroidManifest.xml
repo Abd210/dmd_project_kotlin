@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Permissions -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".MyApplication"
         android:allowBackup="true"
@@ -14,6 +17,8 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Dmd_project_stef"
         tools:targetApi="31">
+
+        <!-- Main Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -23,8 +28,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Other Activities -->
         <activity android:name=".SettingsActivity" />
         <activity android:name=".AddTaskActivity" />
+
+        <!-- Boot Receiver -->
         <receiver
             android:name=".receivers.BootReceiver"
             android:enabled="true"
@@ -33,16 +42,13 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!-- Reminder Service (Optional) -->
         <service
             android:name=".service.ReminderService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync"
-            />
-        <service
-            android:name=".service.PersistentNotificationService"
-            android:enabled="true"
-            android:exported="false" />
+            android:foregroundServiceType="dataSync" />
 
     </application>
 

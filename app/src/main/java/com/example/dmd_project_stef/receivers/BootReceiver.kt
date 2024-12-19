@@ -1,3 +1,4 @@
+//BootReceiver.kt
 package com.example.dmd_project_stef.receivers
 
 import android.content.BroadcastReceiver

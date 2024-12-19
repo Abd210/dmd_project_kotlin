@@ -1,3 +1,4 @@
+// MainActivity.kt
 package com.example.dmd_project_stef
 
 import android.Manifest
@@ -5,11 +6,14 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.example.dmd_project_stef.data.Task
 import com.example.dmd_project_stef.databinding.ActivityMainBinding
 import com.example.dmd_project_stef.notifications.NotificationHelper
@@ -26,13 +30,14 @@ class MainActivity : AppCompatActivity(), TaskAdapter.OnItemClickListener {
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
-            // Permission granted
+            Log.d("MainActivity", "Notification permission granted")
             NotificationHelper.createNotificationChannel(this)
         } else {
-            // Permission denied
+            Log.d("MainActivity", "Notification permission denied")
             Snackbar.make(binding.root, "Notifications permission denied.", Snackbar.LENGTH_SHORT).show()
         }
     }
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,6 +59,11 @@ class MainActivity : AppCompatActivity(), TaskAdapter.OnItemClickListener {
         binding.fabAddTask.setOnClickListener {
             val intent = Intent(this, AddTaskActivity::class.java)
             startActivity(intent)
+        }
+
+        // Set up Test Notification button
+        binding.btnTestNotification.setOnClickListener {
+            triggerTestNotification()
         }
 
         // Create notification channel if permission is granted
@@ -122,5 +132,12 @@ class MainActivity : AppCompatActivity(), TaskAdapter.OnItemClickListener {
         // Delete the task and show a Snackbar confirmation
         taskViewModel.delete(task)
         Snackbar.make(binding.root, "Task '${task.title}' deleted", Snackbar.LENGTH_SHORT).show()
+    }
+
+    private fun triggerTestNotification() {
+        val workRequest = OneTimeWorkRequestBuilder<com.example.dmd_project_stef.workers.TaskCheckWorker>()
+            .build()
+        WorkManager.getInstance(this).enqueue(workRequest)
+        Snackbar.make(binding.root, "Test notification triggered.", Snackbar.LENGTH_SHORT).show()
     }
 }

@@ -1,3 +1,4 @@
+// TaskCheckWorker.kt
 package com.example.dmd_project_stef.workers
 
 import android.Manifest
@@ -6,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -16,38 +18,45 @@ import com.example.dmd_project_stef.R
 import com.example.dmd_project_stef.data.Task
 import com.example.dmd_project_stef.data.TaskDatabase
 import com.example.dmd_project_stef.notifications.NotificationHelper
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.util.concurrent.TimeUnit
 
 class TaskCheckWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
 
-    private val serviceScope = CoroutineScope(Dispatchers.IO)
-
     override fun doWork(): Result {
-        serviceScope.launch {
-            checkTasksAndNotify()
+        Log.d("TaskCheckWorker", "Worker started.")
+
+        // Ensure the notification channel is created
+        NotificationHelper.createNotificationChannel(applicationContext)
+
+        return try {
+            // Perform the task synchronously
+            runBlocking {
+                checkTasksAndNotify()
+            }
+            Log.d("TaskCheckWorker", "Worker completed successfully.")
+            Result.success()
+        } catch (e: Exception) {
+            Log.e("TaskCheckWorker", "Worker failed with exception: ${e.message}")
+            Result.failure()
         }
-        // Indicate whether the work finished successfully with the Result
-        return Result.success()
     }
 
     private suspend fun checkTasksAndNotify() {
         val taskDao = TaskDatabase.getDatabase(applicationContext).taskDao()
-        val tasks = taskDao.getAllTasks().value ?: return
+        val tasks = taskDao.getAllTasksSync()
+        Log.d("TaskCheckWorker", "Fetched tasks for notification: ${tasks.size}")
 
         val currentTime = System.currentTimeMillis()
-
         tasks.forEach { task ->
             if (!task.isCompleted) {
-                if (task.deadline <= currentTime) {
-                    // Task is overdue
-                    sendNotification(task, overdue = true)
-                } else {
-                    // Task is due soon (e.g., within the next hour)
-                    val oneHourInMillis = TimeUnit.HOURS.toMillis(1)
-                    if (task.deadline - currentTime <= oneHourInMillis) {
+                when {
+                    task.deadline <= currentTime -> {
+                        Log.d("TaskCheckWorker", "Task overdue: ${task.title}")
+                        sendNotification(task, overdue = true)
+                    }
+                    task.deadline - currentTime <= TimeUnit.HOURS.toMillis(1) -> {
+                        Log.d("TaskCheckWorker", "Task due soon: ${task.title}")
                         sendNotification(task, overdue = false)
                     }
                 }
@@ -59,7 +68,7 @@ class TaskCheckWorker(context: Context, params: WorkerParameters) : Worker(conte
         // Check for POST_NOTIFICATIONS permission on Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                // Permission not granted, do not send notification
+                Log.w("TaskCheckWorker", "POST_NOTIFICATIONS permission not granted. Cannot send notification.")
                 return
             }
         }
@@ -71,17 +80,26 @@ class TaskCheckWorker(context: Context, params: WorkerParameters) : Worker(conte
             putExtra("task_id", task.id)
         }
 
+        val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+
         val pendingIntent: PendingIntent = PendingIntent.getActivity(
-            applicationContext, task.id, intent, PendingIntent.FLAG_IMMUTABLE
+            applicationContext, task.id, intent, pendingIntentFlags
         )
 
         val title = if (overdue) "Task Overdue" else "Task Due Soon"
         val content = if (overdue) "Task '${task.title}' is overdue!" else "Task '${task.title}' is due within the next hour."
 
+        Log.d("TaskCheckWorker", "Sending notification for task: ${task.title}, overdue: $overdue")
+
         val notification = NotificationCompat.Builder(applicationContext, NotificationHelper.REMINDER_CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(content)
-            .setSmallIcon(R.drawable.ic_reminder)
+            .setSmallIcon(R.drawable.ic_reminder) // Ensure this icon exists and is valid
+            //.setSmallIcon(android.R.drawable.ic_dialog_info) // Temporary icon for testing
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)

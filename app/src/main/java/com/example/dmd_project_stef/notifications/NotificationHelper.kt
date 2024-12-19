@@ -1,9 +1,11 @@
+// NotificationHelper.kt
 package com.example.dmd_project_stef.notifications
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import android.util.Log
 
 object NotificationHelper {
 
@@ -23,6 +25,8 @@ object NotificationHelper {
             val notificationManager: NotificationManager =
                 context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
+
+            Log.d("NotificationHelper", "Notification channel created: $REMINDER_CHANNEL_ID")
         }
     }
 }
