@@ -1,6 +1,6 @@
-//TaskAdapter.kt
 package com.example.dmd_project_stef
 
+import android.content.Context
 import android.graphics.Paint
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -13,12 +13,14 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 class TaskAdapter(
-    private val listener: OnItemClickListener
+    private val listener: OnItemClickListener,
+    private val context: Context // Pass context to adapter
 ) : ListAdapter<Task, TaskAdapter.TaskViewHolder>(TaskDiffCallback()) {
 
     interface OnItemClickListener {
         fun onItemClick(task: Task)
         fun onItemLongClick(task: Task)
+        fun onShareClick(task: Task) // New interface method for sharing
     }
 
     inner class TaskViewHolder(private val binding: ItemTaskBinding) :
@@ -43,11 +45,19 @@ class TaskAdapter(
                     false
                 }
             }
+
+            binding.btnShareTask.setOnClickListener {
+                val position = adapterPosition
+                if(position != RecyclerView.NO_POSITION){
+                    val task = getItem(position)
+                    listener.onShareClick(task) // Handle share click
+                }
+            }
         }
 
         fun bind(task: Task) {
             binding.tvTaskTitle.text = task.title
-            binding.tvTaskDescription.text = task.description ?: "No description"
+            binding.tvTaskDescription.text = task.description ?: context.getString(R.string.no_description)
 
             val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
             val deadlineDate = Date(task.deadline)

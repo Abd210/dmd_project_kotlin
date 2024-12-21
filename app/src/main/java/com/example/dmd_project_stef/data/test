@@ -1,0 +1,1105 @@
+i want you to analyze this project line by line and after that tell me i understand it:
+this is the structure:
+dmd_project_stef
+│
+├── .gradle
+├── .idea
+├── app
+│   ├── build
+│   ├── src
+│   │   ├── androidTest
+│   │   ├── main
+│   │   │   ├── java
+│   │   │   │   └── com.example.dmd_project_stef
+│   │   │   │       ├── data
+│   │   │   │       │   ├── Task
+│   │   │   │       │   ├── TaskDao
+│   │   │   │       │   ├── TaskDatabase
+│   │   │   │       ├── notifications
+│   │   │   │       │   ├── NotificationHelper
+│   │   │   │       ├── receivers
+│   │   │   │       │   ├── BootReceiver
+│   │   │   │       ├── repository
+│   │   │   │       │   ├── TaskRepository
+│   │   │   │       ├── service
+│   │   │   │       │   ├── ReminderService
+│   │   │   │       ├── viewmodel
+│   │   │   │       │   ├── TaskViewModel
+│   │   │   │       │   ├── TaskViewModelFactory
+│   │   │   │       ├── workers
+│   │   │   │           ├── AddTaskActivity
+│   │   │   │           ├── MainActivity
+│   │   │   │           ├── MyApplication
+│   │   │   │           ├── PersistentNotificationService
+│   │   │   │           ├── SettingsActivity
+│   │   │   │           ├── TaskAdapter
+│   │   ├── res
+│   │   │   ├── drawable
+│   │   │   ├── layout
+│   │   │   │   ├── activity_add_task.xml
+│   │   │   │   ├── activity_main.xml
+│   │   │   │   ├── activity_settings.xml
+│   │   │   │   ├── item_task.xml
+│   │   │   │   ├── toolbar.xml
+│   │   │   ├── menu
+│   │   │   │   ├── menu_main.xml
+│   │   │   ├── mipmap-anydpi-v26
+│   │   │   ├── mipmap-hdpi
+│   │   │   ├── mipmap-mdpi
+│   │   │   ├── mipmap-xhdpi
+│   │   │   ├── mipmap-xxhdpi
+│   │   │   ├── mipmap-xxxhdpi
+│   │   │   ├── values
+│   │   │   │   ├── arrays.xml
+│   │   │   │   ├── colors.xml
+│   │   │   │   ├── strings.xml
+│   │   │   │   ├── themes.xml
+│   │   │   │   ├── values-night
+│   │   │   ├── xml
+│   │   │   ├── AndroidManifest.xml
+│   ├── test
+│       ├── [unitTest]
+├── .gitignore
+├── build.gradle.kts
+
+and the code:
+//Task.kt
+package com.example.dmd_project_stef.data
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+@Entity(tableName = "tasks")
+data class Task(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val title: String,
+    val description: String?,
+    val deadline: Long,
+    val isCompleted: Boolean = false
+) :
+//taskDao.kt
+package com.example.dmd_project_stef.data
+
+import androidx.lifecycle.LiveData
+import androidx.room.*
+
+@Dao
+interface TaskDao {
+    @Query("SELECT * FROM tasks ORDER BY deadline ASC")
+    fun getAllTasks(): LiveData<List<Task>>
+
+    @Query("SELECT * FROM tasks WHERE id = :taskId LIMIT 1")
+    suspend fun getTaskById(taskId: Int): Task?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(task: Task)
+
+    @Update
+    suspend fun update(task: Task)
+
+    @Delete
+    suspend fun delete(task: Task)
+
+    // New method to fetch all tasks synchronously
+    @Query("SELECT * FROM tasks ORDER BY deadline ASC")
+    fun getAllTasksSync(): List<Task>
+} :
+//TasDatabase.kt
+package com.example.dmd_project_stef.data
+
+import android.content.Context
+import androidx.room.Database
+import androidx.room.Room
+import androidx.room.RoomDatabase
+
+@Database(entities = [Task::class], version = 1, exportSchema = false)
+abstract class TaskDatabase : RoomDatabase() {
+    abstract fun taskDao(): TaskDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: TaskDatabase? = null
+
+        fun getDatabase(context: Context): TaskDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    TaskDatabase::class.java,
+                    "task_database"
+                )
+                    .fallbackToDestructiveMigration()
+                    .build()
+                INSTANCE = instance
+                instance
+            }
+        }
+    }
+}
+:
+// NotificationHelper.kt
+package com.example.dmd_project_stef.notifications
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.os.Build
+import android.util.Log
+
+object NotificationHelper {
+
+    const val REMINDER_CHANNEL_ID = "reminder_channel"
+    const val REMINDER_CHANNEL_NAME = "Task Reminders"
+
+    fun createNotificationChannel(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                REMINDER_CHANNEL_ID,
+                REMINDER_CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Channel for task reminder notifications"
+            }
+
+            val notificationManager: NotificationManager =
+                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+
+            Log.d("NotificationHelper", "Notification channel created: $REMINDER_CHANNEL_ID")
+        }
+    }
+}
+:
+//BootReceiver.kt
+package com.example.dmd_project_stef.receivers
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import androidx.work.*
+import com.example.dmd_project_stef.workers.TaskCheckWorker
+import java.util.concurrent.TimeUnit
+
+class BootReceiver : BroadcastReceiver() {
+
+    override fun onReceive(context: Context, intent: Intent?) {
+        if (intent?.action == Intent.ACTION_BOOT_COMPLETED) {
+            scheduleTaskCheckWorker(context)
+        }
+    }
+
+    private fun scheduleTaskCheckWorker(context: Context) {
+        val constraints = Constraints.Builder()
+            .setRequiresBatteryNotLow(true)
+            .build()
+
+        val taskCheckRequest = PeriodicWorkRequestBuilder<TaskCheckWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(constraints)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            "TaskCheckWorker",
+            ExistingPeriodicWorkPolicy.KEEP,
+            taskCheckRequest
+        )
+    }
+} :
+//TaskRepository.kt
+package com.example.dmd_project_stef.data
+
+import androidx.lifecycle.LiveData
+
+class TaskRepository(private val taskDao: TaskDao) {
+
+    val allTasks: LiveData<List<Task>> = taskDao.getAllTasks()
+
+    suspend fun getTaskById(taskId: Int): Task? {
+        return taskDao.getTaskById(taskId)
+    }
+
+    suspend fun insert(task: Task) {
+        taskDao.insert(task)
+    }
+
+    suspend fun update(task: Task) {
+        taskDao.update(task)
+    }
+
+    suspend fun delete(task: Task) {
+        taskDao.delete(task)
+    }
+}
+:
+//ReminderService.kt
+package com.example.dmd_project_stef.service
+
+import android.app.Notification
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Intent
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.IBinder
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import com.example.dmd_project_stef.MainActivity
+import com.example.dmd_project_stef.R
+import com.example.dmd_project_stef.data.Task
+import com.example.dmd_project_stef.data.TaskDatabase
+import com.example.dmd_project_stef.notifications.NotificationHelper
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.util.concurrent.TimeUnit
+
+class ReminderService : Service() {
+
+    private val serviceScope = CoroutineScope(Dispatchers.IO)
+
+    override fun onCreate() {
+        super.onCreate()
+        Log.d("ReminderService", "Service created.")
+        NotificationHelper.createNotificationChannel(this)
+        startForegroundService()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d("ReminderService", "Service started.")
+        serviceScope.launch {
+            checkTasksAndNotify()
+        }
+        return START_STICKY
+    }
+
+    private fun startForegroundService() {
+        val notificationIntent = Intent(this, MainActivity::class.java)
+        val pendingIntent: PendingIntent = PendingIntent.getActivity(
+            this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification: Notification = NotificationCompat.Builder(this, NotificationHelper.REMINDER_CHANNEL_ID)
+            .setContentTitle("Smart Reminder Service")
+            .setContentText("Monitoring your tasks for deadlines.")
+            .setSmallIcon(R.drawable.ic_reminder)
+            .setContentIntent(pendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+
+        startForeground(1, notification)
+    }
+
+    private suspend fun checkTasksAndNotify() {
+        val taskDao = TaskDatabase.getDatabase(applicationContext).taskDao()
+        val tasks = taskDao.getAllTasksSync()
+        Log.d("ReminderService", "Fetched tasks: ${tasks.size}")
+
+        val currentTime = System.currentTimeMillis()
+        tasks.forEach { task: Task ->
+            if (!task.isCompleted) {
+                when {
+                    task.deadline <= currentTime -> {
+                        Log.d("ReminderService", "Task overdue: ${task.title}")
+                        sendNotification(task, overdue = true)
+                    }
+                    task.deadline - currentTime <= TimeUnit.HOURS.toMillis(1) -> {
+                        Log.d("ReminderService", "Task due soon: ${task.title}")
+                        sendNotification(task, overdue = false)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun sendNotification(task: Task, overdue: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                Log.w("ReminderService", "POST_NOTIFICATIONS permission not granted.")
+                return
+            }
+        }
+
+        val notificationManager = NotificationManagerCompat.from(this)
+
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("task_id", task.id)
+        }
+
+        val pendingIntent: PendingIntent = PendingIntent.getActivity(
+            this, task.id, intent, PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val title = if (overdue) "Task Overdue" else "Task Due Soon"
+        val content = if (overdue) "Task '${task.title}' is overdue!" else "Task '${task.title}' is due within the next hour."
+
+        Log.d("ReminderService", "Sending notification for task: ${task.title}, overdue: $overdue")
+
+        val notification = NotificationCompat.Builder(this, NotificationHelper.REMINDER_CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(content)
+            .setSmallIcon(R.drawable.ic_reminder)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+
+        notificationManager.notify(task.id, notification)
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+}
+:
+//TaskViewModel.kt
+package com.example.dmd_project_stef.viewmodel
+
+import android.app.Application
+import android.util.Log
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.viewModelScope
+import com.example.dmd_project_stef.data.Task
+import com.example.dmd_project_stef.data.TaskDatabase
+import com.example.dmd_project_stef.data.TaskRepository
+import kotlinx.coroutines.launch
+
+class TaskViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val repository: TaskRepository
+    val allTasks: LiveData<List<Task>>
+
+    init {
+        val taskDao = TaskDatabase.getDatabase(application).taskDao()
+        repository = TaskRepository(taskDao)
+        allTasks = repository.allTasks
+    }
+
+    fun insert(task: Task) = viewModelScope.launch {
+        Log.d("TaskViewModel", "Inserting task: ${task.title}")
+        repository.insert(task)
+    }
+
+    fun update(task: Task) = viewModelScope.launch {
+        Log.d("TaskViewModel", "Updating task: ${task.title}")
+        repository.update(task)
+    }
+
+    fun delete(task: Task) = viewModelScope.launch {
+        Log.d("TaskViewModel", "Deleting task: ${task.title}")
+        repository.delete(task)
+    }
+
+
+    fun getTaskById(taskId: Int): LiveData<Task?> {
+        val taskLiveData = androidx.lifecycle.MutableLiveData<Task?>()
+        viewModelScope.launch {
+            taskLiveData.postValue(repository.getTaskById(taskId))
+        }
+        return taskLiveData
+    }
+}
+:
+//AddTaskActivity.kt
+package com.example.dmd_project_stef
+
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
+import com.example.dmd_project_stef.data.Task
+import com.example.dmd_project_stef.databinding.ActivityAddTaskBinding
+import com.example.dmd_project_stef.viewmodel.TaskViewModel
+import java.util.*
+
+class AddTaskActivity : AppCompatActivity() {
+
+    companion object {
+        const val EXTRA_TASK_ID = "com.example.dmd_project_stef.TASK_ID"
+    }
+
+    private lateinit var binding: ActivityAddTaskBinding
+    private val taskViewModel: TaskViewModel by viewModels()
+    private var taskId: Int? = null
+    private var selectedDeadline: Long = System.currentTimeMillis()
+    private var isDeadlineDateSet: Boolean = false
+    private var isDeadlineTimeSet: Boolean = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityAddTaskBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        // Set up the toolbar
+        setSupportActionBar(binding.toolbar)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+
+        // Check if editing an existing task
+        taskId = intent.getIntExtra(EXTRA_TASK_ID, -1)
+        if (taskId != -1) {
+            loadTask(taskId!!)
+        }
+
+        // Set up DatePickerDialog
+        binding.btnSelectDate.setOnClickListener {
+            showDatePickerDialog()
+        }
+
+        // Set up TimePickerDialog
+        binding.btnSelectTime.setOnClickListener {
+            if (isDeadlineDateSet) {
+                showTimePickerDialog()
+            } else {
+                Toast.makeText(this, "Please select the deadline date first.", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Save Task button
+        binding.btnSaveTask.setOnClickListener {
+            saveTask()
+        }
+    }
+
+    private fun loadTask(taskId: Int) {
+        taskViewModel.getTaskById(taskId).observe(this, { task ->
+            task?.let {
+                binding.etTaskTitle.setText(it.title)
+                binding.etTaskDescription.setText(it.description)
+                val calendar = Calendar.getInstance()
+                calendar.timeInMillis = it.deadline
+                val year = calendar.get(Calendar.YEAR)
+                val month = calendar.get(Calendar.MONTH)
+                val day = calendar.get(Calendar.DAY_OF_MONTH)
+                val hour = calendar.get(Calendar.HOUR_OF_DAY)
+                val minute = calendar.get(Calendar.MINUTE)
+
+                selectedDeadline = it.deadline
+                isDeadlineDateSet = true
+                isDeadlineTimeSet = true
+
+                binding.tvSelectedDate.text = "Selected Date: $year-${month + 1}-$day"
+                binding.tvSelectedTime.text = "Selected Time: ${String.format("%02d:%02d", hour, minute)}"
+            }
+        })
+    }
+
+    private fun showDatePickerDialog() {
+        val calendar = Calendar.getInstance()
+        val year = calendar.get(Calendar.YEAR)
+        val month = calendar.get(Calendar.MONTH)
+        val day = calendar.get(Calendar.DAY_OF_MONTH)
+
+        val datePickerDialog = DatePickerDialog(this, { _, selectedYear, selectedMonth, selectedDay ->
+            // Update the calendar with the selected date
+            calendar.set(selectedYear, selectedMonth, selectedDay)
+            isDeadlineDateSet = true
+
+            // Update the selectedDeadline with the new date while preserving the time
+            val currentTime = selectedDeadline
+            val currentCalendar = Calendar.getInstance()
+            currentCalendar.timeInMillis = currentTime
+            val hour = currentCalendar.get(Calendar.HOUR_OF_DAY)
+            val minute = currentCalendar.get(Calendar.MINUTE)
+            calendar.set(Calendar.HOUR_OF_DAY, hour)
+            calendar.set(Calendar.MINUTE, minute)
+            calendar.set(Calendar.SECOND, 0)
+            calendar.set(Calendar.MILLISECOND, 0)
+            selectedDeadline = calendar.timeInMillis
+
+            // Update UI to show selected date
+            binding.tvSelectedDate.text = "Selected Date: $selectedYear-${selectedMonth + 1}-$selectedDay"
+
+            // If time was previously set, update the selectedDeadline accordingly
+            if (isDeadlineTimeSet) {
+                binding.tvSelectedTime.text = binding.tvSelectedTime.text.toString() // Keep existing time display
+            }
+        }, year, month, day)
+
+        datePickerDialog.show()
+    }
+
+    private fun showTimePickerDialog() {
+        val calendar = Calendar.getInstance()
+        // Set the calendar to the current selectedDeadline
+        calendar.timeInMillis = selectedDeadline
+        val hour = calendar.get(Calendar.HOUR_OF_DAY)
+        val minute = calendar.get(Calendar.MINUTE)
+
+        val timePickerDialog = TimePickerDialog(this, { _, selectedHour, selectedMinute ->
+            // Update the calendar with the selected time
+            calendar.set(Calendar.HOUR_OF_DAY, selectedHour)
+            calendar.set(Calendar.MINUTE, selectedMinute)
+            isDeadlineTimeSet = true
+            selectedDeadline = calendar.timeInMillis
+
+            // Update UI to show selected time
+            binding.tvSelectedTime.text = "Selected Time: ${String.format("%02d:%02d", selectedHour, selectedMinute)}"
+        }, hour, minute, true) // true for 24-hour format
+
+        timePickerDialog.show()
+    }
+
+    private fun saveTask() {
+        val title = binding.etTaskTitle.text.toString().trim()
+        val description = binding.etTaskDescription.text.toString().trim()
+
+        if (title.isEmpty()) {
+            Toast.makeText(this, "Please enter a task title", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (!isDeadlineDateSet || !isDeadlineTimeSet) {
+            Toast.makeText(this, "Please select both deadline date and time", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (selectedDeadline < System.currentTimeMillis()) {
+            Toast.makeText(this, "Deadline cannot be in the past.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val task = if (taskId != null && taskId != -1) {
+            Task(
+                id = taskId!!,
+                title = title,
+                description = description,
+                deadline = selectedDeadline,
+                isCompleted = false // Consider preserving this if editing
+            )
+        } else {
+            Task(
+                title = title,
+                description = description,
+                deadline = selectedDeadline
+            )
+        }
+
+        if (taskId != null && taskId != -1) {
+            taskViewModel.update(task)
+            Toast.makeText(this, "Task updated", Toast.LENGTH_SHORT).show()
+        } else {
+            taskViewModel.insert(task)
+            Toast.makeText(this, "Task added", Toast.LENGTH_SHORT).show()
+        }
+
+        finish()
+    }
+
+    override fun onSupportNavigateUp(): Boolean {
+        finish()
+        return true
+    }
+
+    // Optional: Handle configuration changes to preserve state
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putLong("selectedDeadline", selectedDeadline)
+        outState.putBoolean("isDeadlineDateSet", isDeadlineDateSet)
+        outState.putBoolean("isDeadlineTimeSet", isDeadlineTimeSet)
+    }
+
+    override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+        super.onRestoreInstanceState(savedInstanceState)
+        selectedDeadline = savedInstanceState.getLong("selectedDeadline", System.currentTimeMillis())
+        isDeadlineDateSet = savedInstanceState.getBoolean("isDeadlineDateSet", false)
+        isDeadlineTimeSet = savedInstanceState.getBoolean("isDeadlineTimeSet", false)
+
+        if (isDeadlineDateSet) {
+            val calendar = Calendar.getInstance()
+            calendar.timeInMillis = selectedDeadline
+            val year = calendar.get(Calendar.YEAR)
+            val month = calendar.get(Calendar.MONTH)
+            val day = calendar.get(Calendar.DAY_OF_MONTH)
+            binding.tvSelectedDate.text = "Selected Date: $year-${month + 1}-$day"
+        }
+
+        if (isDeadlineTimeSet) {
+            val calendar = Calendar.getInstance()
+            calendar.timeInMillis = selectedDeadline
+            val hour = calendar.get(Calendar.HOUR_OF_DAY)
+            val minute = calendar.get(Calendar.MINUTE)
+            binding.tvSelectedTime.text = "Selected Time: ${String.format("%02d:%02d", hour, minute)}"
+        }
+    }
+}
+:
+// MainActivity.kt
+package com.example.dmd_project_stef
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import android.util.Log
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import com.example.dmd_project_stef.data.Task
+import com.example.dmd_project_stef.databinding.ActivityMainBinding
+import com.example.dmd_project_stef.notifications.NotificationHelper
+import com.example.dmd_project_stef.viewmodel.TaskViewModel
+import com.google.android.material.snackbar.Snackbar
+
+class MainActivity : AppCompatActivity(), TaskAdapter.OnItemClickListener {
+
+    private lateinit var binding: ActivityMainBinding
+    private lateinit var taskAdapter: TaskAdapter
+    private val taskViewModel: TaskViewModel by viewModels()
+
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            Log.d("MainActivity", "Notification permission granted")
+            NotificationHelper.createNotificationChannel(this)
+        } else {
+            Log.d("MainActivity", "Notification permission denied")
+            Snackbar.make(binding.root, "Notifications permission denied.", Snackbar.LENGTH_SHORT).show()
+        }
+    }
+
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        // Set up the toolbar
+        setSupportActionBar(binding.toolbar)
+
+        // Initialize RecyclerView
+        setupRecyclerView()
+
+        // Observe tasks from ViewModel
+        taskViewModel.allTasks.observe(this) { tasks ->
+            taskAdapter.submitList(tasks)
+        }
+
+        // Set up FAB to navigate to AddTaskActivity
+        binding.fabAddTask.setOnClickListener {
+            val intent = Intent(this, AddTaskActivity::class.java)
+            startActivity(intent)
+        }
+
+        // Set up Test Notification button
+        binding.btnTestNotification.setOnClickListener {
+            triggerTestNotification()
+        }
+
+        // Create notification channel if permission is granted
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            when {
+                ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED -> {
+                    // Permission already granted
+                    NotificationHelper.createNotificationChannel(this)
+                }
+                shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) -> {
+                    // Provide rationale and request permission
+                    Snackbar.make(binding.root, "Notifications are important for task reminders.", Snackbar.LENGTH_INDEFINITE)
+                        .setAction("Allow") {
+                            requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }.show()
+                }
+                else -> {
+                    // Directly request for permission
+                    requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+        } else {
+            // Permission automatically granted on older Android versions
+            NotificationHelper.createNotificationChannel(this)
+        }
+    }
+
+    private fun setupRecyclerView() {
+        taskAdapter = TaskAdapter(this)
+        binding.recyclerViewTasks.apply {
+            layoutManager = LinearLayoutManager(this@MainActivity)
+            adapter = taskAdapter
+            setHasFixedSize(true)
+        }
+    }
+
+    override fun onCreateOptionsMenu(menu: android.view.Menu?): Boolean {
+        menuInflater.inflate(R.menu.menu_main, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_settings -> {
+                // Navigate to SettingsActivity
+                val intent = Intent(this, SettingsActivity::class.java)
+                startActivity(intent)
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    override fun onItemClick(task: Task) {
+        // Navigate to AddTaskActivity for editing the selected task
+        val intent = Intent(this, AddTaskActivity::class.java).apply {
+            putExtra(AddTaskActivity.EXTRA_TASK_ID, task.id)
+        }
+        startActivity(intent)
+    }
+
+    override fun onItemLongClick(task: Task) {
+        // Delete the task and show a Snackbar confirmation
+        taskViewModel.delete(task)
+        Snackbar.make(binding.root, "Task '${task.title}' deleted", Snackbar.LENGTH_SHORT).show()
+    }
+
+    private fun triggerTestNotification() {
+        val workRequest = OneTimeWorkRequestBuilder<com.example.dmd_project_stef.workers.TaskCheckWorker>()
+            .build()
+        WorkManager.getInstance(this).enqueue(workRequest)
+        Snackbar.make(binding.root, "Test notification triggered.", Snackbar.LENGTH_SHORT).show()
+    }
+}
+:
+// MyApplication.kt
+package com.example.dmd_project_stef
+
+import android.app.Application
+import android.util.Log
+import androidx.work.*
+import com.example.dmd_project_stef.notifications.NotificationHelper
+import com.example.dmd_project_stef.workers.TaskCheckWorker
+import java.util.concurrent.TimeUnit
+
+class MyApplication : Application() {
+
+    override fun onCreate() {
+        super.onCreate()
+        Log.d("MyApplication", "App created, initializing notification channel and scheduling TaskCheckWorker.")
+
+        // Create notification channel
+        NotificationHelper.createNotificationChannel(this)
+
+        // Schedule TaskCheckWorker
+        scheduleTaskCheckWorker()
+    }
+
+    private fun scheduleTaskCheckWorker() {
+        // Remove battery constraint for testing
+        val constraints = Constraints.Builder()
+            //.setRequiresBatteryNotLow(true) // Temporarily remove this constraint
+            .build()
+
+        // Periodic work every 15 minutes (minimum interval)
+        val taskCheckPeriodicRequest = PeriodicWorkRequestBuilder<TaskCheckWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(constraints)
+            .build()
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "TaskCheckWorker",
+            ExistingPeriodicWorkPolicy.KEEP,
+            taskCheckPeriodicRequest
+        )
+
+        // One-time immediate work for testing
+        val taskCheckImmediateRequest = OneTimeWorkRequestBuilder<TaskCheckWorker>()
+            .setConstraints(constraints)
+            .build()
+
+        WorkManager.getInstance(this).enqueue(taskCheckImmediateRequest)
+
+        Log.d("MyApplication", "TaskCheckWorker scheduled.")
+    }
+}
+:
+//SettingsActivity.kt
+package com.example.dmd_project_stef
+
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
+import androidx.preference.PreferenceFragmentCompat
+import com.example.dmd_project_stef.databinding.ActivitySettingsBinding
+
+class SettingsActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivitySettingsBinding
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivitySettingsBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        // Set up the toolbar
+        setSupportActionBar(binding.toolbar)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+
+        // Load the preference fragment
+        supportFragmentManager
+            .beginTransaction()
+            .replace(R.id.settings_container, SettingsFragment())
+            .commit()
+    }
+
+    override fun onSupportNavigateUp(): Boolean {
+        finish()
+        return true
+    }
+
+    class SettingsFragment : PreferenceFragmentCompat() {
+        override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+            setPreferencesFromResource(R.xml.preferences, rootKey)
+        }
+    }
+}
+:
+//TaskAdapter.kt
+package com.example.dmd_project_stef
+
+import android.graphics.Paint
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter
+import androidx.recyclerview.widget.RecyclerView
+import com.example.dmd_project_stef.data.Task
+import com.example.dmd_project_stef.databinding.ItemTaskBinding
+import java.text.SimpleDateFormat
+import java.util.*
+
+class TaskAdapter(
+    private val listener: OnItemClickListener
+) : ListAdapter<Task, TaskAdapter.TaskViewHolder>(TaskDiffCallback()) {
+
+    interface OnItemClickListener {
+        fun onItemClick(task: Task)
+        fun onItemLongClick(task: Task)
+    }
+
+    inner class TaskViewHolder(private val binding: ItemTaskBinding) :
+        RecyclerView.ViewHolder(binding.root) {
+
+        init {
+            binding.root.setOnClickListener {
+                val position = adapterPosition
+                if(position != RecyclerView.NO_POSITION){
+                    val task = getItem(position)
+                    listener.onItemClick(task)
+                }
+            }
+
+            binding.root.setOnLongClickListener {
+                val position = adapterPosition
+                if(position != RecyclerView.NO_POSITION){
+                    val task = getItem(position)
+                    listener.onItemLongClick(task)
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        fun bind(task: Task) {
+            binding.tvTaskTitle.text = task.title
+            binding.tvTaskDescription.text = task.description ?: "No description"
+
+            val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+            val deadlineDate = Date(task.deadline)
+            binding.tvTaskDeadline.text = "Deadline: ${sdf.format(deadlineDate)}"
+
+            // Strike-through if completed
+            if (task.isCompleted) {
+                binding.tvTaskTitle.paintFlags = binding.tvTaskTitle.paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
+                binding.tvTaskDescription.paintFlags = binding.tvTaskDescription.paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
+                binding.tvTaskDeadline.paintFlags = binding.tvTaskDeadline.paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
+            } else {
+                binding.tvTaskTitle.paintFlags = binding.tvTaskTitle.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
+                binding.tvTaskDescription.paintFlags = binding.tvTaskDescription.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
+                binding.tvTaskDeadline.paintFlags = binding.tvTaskDeadline.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
+            }
+        }
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TaskViewHolder {
+        val binding = ItemTaskBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        return TaskViewHolder(binding)
+    }
+
+    override fun onBindViewHolder(holder: TaskViewHolder, position: Int) {
+        holder.bind(getItem(position))
+    }
+}
+
+class TaskDiffCallback : DiffUtil.ItemCallback<Task>() {
+    override fun areItemsTheSame(oldItem: Task, newItem: Task): Boolean {
+        return oldItem.id == newItem.id
+    }
+
+    override fun areContentsTheSame(oldItem: Task, newItem: Task): Boolean {
+        return oldItem == newItem
+    }
+}
+:
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Permissions -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:name=".MyApplication"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Dmd_project_stef"
+        tools:targetApi="31">
+
+        <!-- Main Activity -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Other Activities -->
+        <activity android:name=".SettingsActivity" />
+        <activity android:name=".AddTaskActivity" />
+
+        <!-- Boot Receiver -->
+        <receiver
+            android:name=".receivers.BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Reminder Service (Optional) -->
+        <service
+            android:name=".service.ReminderService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+    </application>
+
+</manifest>
+:plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    kotlin("kapt") // For annotation processing
+    id("kotlin-kapt")
+}
+
+android {
+    namespace = "com.example.dmd_project_stef"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.example.dmd_project_stef"
+        minSdk = 24
+        targetSdk = 34
+        versionCode = 1
+
+        versionName = "1.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+    buildFeatures {
+        viewBinding = true
+    }
+}
+
+dependencies {
+
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.material)
+    implementation(libs.androidx.activity)
+    implementation(libs.androidx.constraintlayout)
+    implementation(libs.androidx.room.common)
+    implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.espresso.core)
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
+
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+
+    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.10.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+
+    // Room components
+    implementation("androidx.room:room-runtime:2.6.1")
+    kapt("androidx.room:room-compiler:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+
+    // Lifecycle components
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.1")
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.6.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.1")
+
+    // WorkManager
+    implementation("androidx.work:work-runtime-ktx:2.8.1")
+
+    // Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    // RecyclerView
+    implementation("androidx.recyclerview:recyclerview:1.3.1")
+    implementation ("com.google.android.material:material:1.9.0")
+    // CardView
+    implementation("androidx.cardview:cardview:1.0.0")
+
+    // Preference Library
+    implementation("androidx.preference:preference-ktx:1.2.1") // Added for SettingsActivity
+
+    // Testing
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+}

@@ -3,4 +3,11 @@
     <color name="colorPrimaryVariant">#3700B3</color>
     <color name="colorSecondary">#03DAC6</color>
     <!-- Add other colors as needed -->
+    <color name="purple_200">#BB86FC</color>
+    <color name="purple_500">#6200EE</color>
+    <color name="purple_700">#3700B3</color>
+    <color name="teal_200">#03DAC5</color>
+    <color name="teal_700">#018786</color>
+    <color name="black">#000000</color>
+    <color name="gray">#808080</color> <!-- Added gray color -->
 </resources>
